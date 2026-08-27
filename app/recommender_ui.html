@@ -415,6 +415,44 @@
     margin: -10px 0 16px;
   }
 
+  .browse-panel {
+    display: none;
+  }
+
+  .browse-panel.expanded {
+    display: block;
+  }
+
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    margin-top: 18px;
+  }
+
+  .page-btn {
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.82rem;
+  }
+
+  .page-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  .page-btn:not(:disabled):hover { border-color: var(--accent); }
+
+  .page-indicator {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+  }
+
   #detail-sections {
     display: none;
   }
@@ -461,7 +499,10 @@
     <h2>🎭 장르로 둘러보기</h2>
     <p class="browse-hint">제목이 잘 기억나지 않는다면, 장르를 눌러서 평점 높은 영화부터 둘러보세요.</p>
     <div class="genre-chips" id="genre-chips"></div>
-    <div id="browse-grid" class="card-grid"></div>
+    <div id="browse-panel" class="browse-panel">
+      <div id="browse-grid" class="card-grid"></div>
+      <div id="browse-pagination" class="pagination"></div>
+    </div>
   </section>
 
   <div id="detail-sections">
@@ -627,6 +668,10 @@
     renderExplanation();
     renderComparison();
 
+    // 영화를 선택하면 장르 둘러보기는 다시 접어서(초기 상태로) 화면 위쪽을 간결하게 유지하고,
+    // 본문(선택한 영화/추천 결과)에 집중할 수 있게 합니다.
+    collapseBrowse();
+
     // 처음 선택하는 순간에만 상세 영역을 화면에 나타내고, 그쪽으로 스크롤합니다.
     const detail = document.getElementById("detail-sections");
     detail.classList.add("visible");
@@ -664,8 +709,12 @@
     });
   }
 
-  // 5) 장르 칩 + 둘러보기 그리드
-  const BROWSE_DISPLAY_LIMIT = 24;
+  // 5) 장르 칩 + 둘러보기 그리드 (페이지네이션 포함)
+  //    처음에는 장르 칩만 보이고, 특정 장르를 눌러야 그리드가 펼쳐집니다.
+  //    한 페이지에 12개(2줄 분량)씩만 보여주고, 나머지는 페이지 이동으로 확인합니다.
+  const BROWSE_PAGE_SIZE = 12;
+  let currentGenreKey = null;
+  let currentPage = 0;
 
   function renderGenreChips() {
     const chipBar = document.getElementById("genre-chips");
@@ -675,35 +724,86 @@
     const orderedKeys = ["all", ...otherKeys];
 
     chipBar.innerHTML = orderedKeys
-      .map(
-        (key, i) =>
-          `<button class="chip${i === 0 ? " active" : ""}" data-genre="${key}">${DATA.genre_index[key].label_ko}</button>`
-      )
+      .map((key) => `<button class="chip" data-genre="${key}">${DATA.genre_index[key].label_ko}</button>`)
       .join("");
 
     chipBar.addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-genre]");
       if (!btn) return;
-      chipBar.querySelectorAll(".chip").forEach((c) => c.classList.toggle("active", c === btn));
-      renderBrowseGrid(btn.dataset.genre);
+
+      // 이미 펼쳐져 있는 장르를 다시 누르면 접습니다. (토글)
+      if (currentGenreKey === btn.dataset.genre) {
+        collapseBrowse();
+      } else {
+        expandBrowse(btn.dataset.genre);
+      }
     });
   }
 
-  function renderBrowseGrid(genreKey) {
-    const entry = DATA.genre_index[genreKey];
-    if (!entry) return;
-    const grid = document.getElementById("browse-grid");
+  function expandBrowse(genreKey) {
+    if (!DATA.genre_index[genreKey]) return;
+    currentGenreKey = genreKey;
+    currentPage = 0;
 
-    grid.innerHTML = entry.movie_ids
-      .slice(0, BROWSE_DISPLAY_LIMIT)
+    document.getElementById("browse-panel").classList.add("expanded");
+    document
+      .querySelectorAll("#genre-chips .chip")
+      .forEach((c) => c.classList.toggle("active", c.dataset.genre === genreKey));
+
+    renderBrowsePage();
+  }
+
+  function collapseBrowse() {
+    currentGenreKey = null;
+    currentPage = 0;
+    document.getElementById("browse-panel").classList.remove("expanded");
+    document.getElementById("browse-grid").innerHTML = "";
+    document.getElementById("browse-pagination").innerHTML = "";
+    document.querySelectorAll("#genre-chips .chip").forEach((c) => c.classList.remove("active"));
+  }
+
+  function renderBrowsePage() {
+    const entry = DATA.genre_index[currentGenreKey];
+    if (!entry) return;
+
+    const totalPages = Math.max(1, Math.ceil(entry.movie_ids.length / BROWSE_PAGE_SIZE));
+    const pageIds = entry.movie_ids.slice(
+      currentPage * BROWSE_PAGE_SIZE,
+      (currentPage + 1) * BROWSE_PAGE_SIZE
+    );
+
+    const grid = document.getElementById("browse-grid");
+    grid.innerHTML = pageIds
       .map((id) => {
         const m = movieById(id);
         const subtitle = `<div class="rec-sim">⭐ ${m.weighted_vote.toFixed(1)} (가중 평점)</div>`;
         return movieCardHtml(id, { subtitleHtml: subtitle });
       })
       .join("");
-
     attachCardClickHandlers(grid);
+
+    const pagination = document.getElementById("browse-pagination");
+    if (totalPages <= 1) {
+      pagination.innerHTML = "";
+      return;
+    }
+    pagination.innerHTML = `
+      <button class="page-btn" id="browse-prev" ${currentPage === 0 ? "disabled" : ""}>‹ 이전</button>
+      <span class="page-indicator">${currentPage + 1} / ${totalPages}</span>
+      <button class="page-btn" id="browse-next" ${currentPage === totalPages - 1 ? "disabled" : ""}>다음 ›</button>
+    `;
+    document.getElementById("browse-prev").addEventListener("click", () => {
+      if (currentPage > 0) {
+        currentPage -= 1;
+        renderBrowsePage();
+      }
+    });
+    document.getElementById("browse-next").addEventListener("click", () => {
+      if (currentPage < totalPages - 1) {
+        currentPage += 1;
+        renderBrowsePage();
+      }
+    });
   }
 
   function renderSelectedMovie() {
@@ -837,10 +937,10 @@
     document.getElementById("compare-body").innerHTML = rows.join("");
   }
 
-  // 6) 초기 진입 시에는 특정 영화를 강제로 선택하지 않고, "전체 인기작" 둘러보기 그리드를 보여줍니다.
-  //    제목을 모르는 사용자도 장르 칩을 눌러가며 영화를 고를 수 있게 하기 위함입니다.
+  // 6) 초기 진입 시에는 장르 칩만 보여주고, 그리드는 접어둔 채로 시작합니다.
+  //    제목을 모르는 사용자는 장르 칩을 눌러야 그리드가 펼쳐지고, 영화를 고를 수 있습니다.
   renderGenreChips();
-  renderBrowseGrid("all");
+  collapseBrowse();
 })();
 </script>
 
