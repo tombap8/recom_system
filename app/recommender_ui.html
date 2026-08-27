@@ -241,8 +241,8 @@
     font-weight: 600;
   }
 
-  /* ---------- 추천 카드 그리드 ---------- */
-  #rec-grid {
+  /* ---------- 카드 그리드 (추천 결과 / 장르 둘러보기 공용) ---------- */
+  .card-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 16px;
@@ -382,6 +382,49 @@
     line-height: 1.7;
   }
 
+  /* ---------- 장르 둘러보기 ---------- */
+  .genre-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+
+  .chip {
+    padding: 7px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.82rem;
+  }
+
+  .chip:hover { border-color: var(--accent); color: var(--text); }
+
+  .chip.active {
+    background: var(--accent);
+    color: #1a1a1a;
+    font-weight: 600;
+    border-color: var(--accent);
+  }
+
+  .browse-hint {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    margin: -10px 0 16px;
+  }
+
+  #detail-sections {
+    display: none;
+  }
+
+  #detail-sections.visible {
+    display: flex;
+    flex-direction: column;
+    gap: 36px;
+  }
+
   @media (max-width: 640px) {
     #selected-movie { grid-template-columns: 1fr; }
     #selected-poster { width: 140px; height: 210px; }
@@ -415,6 +458,15 @@
   </section>
 
   <section>
+    <h2>🎭 장르로 둘러보기</h2>
+    <p class="browse-hint">제목이 잘 기억나지 않는다면, 장르를 눌러서 평점 높은 영화부터 둘러보세요.</p>
+    <div class="genre-chips" id="genre-chips"></div>
+    <div id="browse-grid" class="card-grid"></div>
+  </section>
+
+  <div id="detail-sections">
+
+  <section>
     <h2>🎞 선택한 영화</h2>
     <div id="selected-movie">
       <img id="selected-poster" src="" alt="poster" />
@@ -433,7 +485,7 @@
       <button data-mode="after" class="active">가중 평점 반영 (After)</button>
       <button data-mode="before">순수 유사도 (Before)</button>
     </div>
-    <div id="rec-grid"></div>
+    <div id="rec-grid" class="card-grid"></div>
   </section>
 
   <section>
@@ -455,6 +507,8 @@
       </table>
     </div>
   </section>
+
+  </div>
 
 </main>
 
@@ -572,12 +626,84 @@
     renderRecommendations();
     renderExplanation();
     renderComparison();
+
+    // 처음 선택하는 순간에만 상세 영역을 화면에 나타내고, 그쪽으로 스크롤합니다.
+    const detail = document.getElementById("detail-sections");
+    detail.classList.add("visible");
+    detail.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function posterTag(url, alt) {
     return url
       ? `<img src="${url}" alt="${alt}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'), {className:'poster-fallback', innerText:'🎬'}))" />`
       : `<div class="poster-fallback">🎬</div>`;
+  }
+
+  // 추천 카드 / 둘러보기 카드에 공통으로 쓰는 카드 템플릿
+  function movieCardHtml(id, { subtitleHtml = "", genreTagsHtml = null } = {}) {
+    const m = movieById(id);
+    const year = m.release_date ? m.release_date.slice(0, 4) : null;
+    const tags = genreTagsHtml ?? m.genres_ko.map((g) => `<span class="tag">${g}</span>`).join("");
+    return `
+      <div class="rec-card" data-id="${id}">
+        ${posterTag(m.poster_url, displayTitle(m))}
+        <div class="rec-body">
+          <p class="rec-title">${displayTitle(m)}${year ? ` <span class="rec-year">(${year})</span>` : ""}</p>
+          ${hasKoTitle(m) ? `<p class="rec-title-original">${m.title}</p>` : ""}
+          ${subtitleHtml}
+          <div class="rec-genres">${tags}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // 카드 그리드(container) 안의 모든 카드에 "클릭하면 그 영화를 선택" 이벤트를 붙여줍니다.
+  function attachCardClickHandlers(container) {
+    container.querySelectorAll(".rec-card").forEach((card) => {
+      card.addEventListener("click", () => selectMovie(Number(card.dataset.id)));
+    });
+  }
+
+  // 5) 장르 칩 + 둘러보기 그리드
+  const BROWSE_DISPLAY_LIMIT = 24;
+
+  function renderGenreChips() {
+    const chipBar = document.getElementById("genre-chips");
+    const otherKeys = Object.keys(DATA.genre_index).filter((k) => k !== "all");
+    // 영화 수가 많은(대중적인) 장르가 앞에 오도록 정렬합니다.
+    otherKeys.sort((a, b) => DATA.genre_index[b].movie_ids.length - DATA.genre_index[a].movie_ids.length);
+    const orderedKeys = ["all", ...otherKeys];
+
+    chipBar.innerHTML = orderedKeys
+      .map(
+        (key, i) =>
+          `<button class="chip${i === 0 ? " active" : ""}" data-genre="${key}">${DATA.genre_index[key].label_ko}</button>`
+      )
+      .join("");
+
+    chipBar.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-genre]");
+      if (!btn) return;
+      chipBar.querySelectorAll(".chip").forEach((c) => c.classList.toggle("active", c === btn));
+      renderBrowseGrid(btn.dataset.genre);
+    });
+  }
+
+  function renderBrowseGrid(genreKey) {
+    const entry = DATA.genre_index[genreKey];
+    if (!entry) return;
+    const grid = document.getElementById("browse-grid");
+
+    grid.innerHTML = entry.movie_ids
+      .slice(0, BROWSE_DISPLAY_LIMIT)
+      .map((id) => {
+        const m = movieById(id);
+        const subtitle = `<div class="rec-sim">⭐ ${m.weighted_vote.toFixed(1)} (가중 평점)</div>`;
+        return movieCardHtml(id, { subtitleHtml: subtitle });
+      })
+      .join("");
+
+    attachCardClickHandlers(grid);
   }
 
   function renderSelectedMovie() {
@@ -632,34 +758,18 @@
         // 공통 장르 판단은 언어에 상관없는 영어 장르명 배열로 하고, 화면 라벨은 한글로 보여줍니다.
         const isCommon = recMovie.genres.map((g) => movie.genres.includes(g));
         const simPct = Math.round(rec.similarity * 100);
-        const year = recMovie.release_date ? recMovie.release_date.slice(0, 4) : null;
+        const subtitle = `<div class="rec-sim">유사도 ${simPct}%${
+          currentMode === "after" ? ` · ⭐ ${rec.weighted_vote.toFixed(1)}` : ""
+        }</div>`;
+        const tags = recMovie.genres_ko
+          .map((g, i) => `<span class="tag${isCommon[i] ? "" : " muted"}">${g}</span>`)
+          .join("");
 
-        return `
-          <div class="rec-card" data-id="${rec.id}">
-            ${posterTag(recMovie.poster_url, displayTitle(recMovie))}
-            <div class="rec-body">
-              <p class="rec-title">${displayTitle(recMovie)}${year ? ` <span class="rec-year">(${year})</span>` : ""}</p>
-              ${hasKoTitle(recMovie) ? `<p class="rec-title-original">${recMovie.title}</p>` : ""}
-              <div class="rec-sim">유사도 ${simPct}%${
-                currentMode === "after" ? ` · ⭐ ${rec.weighted_vote.toFixed(1)}` : ""
-              }</div>
-              <div class="rec-genres">
-                ${recMovie.genres_ko
-                  .map((g, i) => `<span class="tag${isCommon[i] ? "" : " muted"}">${g}</span>`)
-                  .join("")}
-              </div>
-            </div>
-          </div>
-        `;
+        return movieCardHtml(rec.id, { subtitleHtml: subtitle, genreTagsHtml: tags });
       })
       .join("");
 
-    grid.querySelectorAll(".rec-card").forEach((card) => {
-      card.addEventListener("click", () => {
-        selectMovie(Number(card.dataset.id));
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      });
-    });
+    attachCardClickHandlers(grid);
   }
 
   function renderExplanation() {
@@ -727,11 +837,10 @@
     document.getElementById("compare-body").innerHTML = rows.join("");
   }
 
-  // 5) 초기 진입 시 기본 영화 선택 (데이터에 있으면 The Dark Knight Rises, 없으면 첫 번째 영화)
-  const defaultMovie =
-    DATA.search_index.find((m) => m.title === "The Dark Knight Rises") || DATA.search_index[0];
-  searchInput.value = defaultMovie.title_ko || defaultMovie.title;
-  selectMovie(defaultMovie.id);
+  // 6) 초기 진입 시에는 특정 영화를 강제로 선택하지 않고, "전체 인기작" 둘러보기 그리드를 보여줍니다.
+  //    제목을 모르는 사용자도 장르 칩을 눌러가며 영화를 고를 수 있게 하기 위함입니다.
+  renderGenreChips();
+  renderBrowseGrid("all");
 })();
 </script>
 
