@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>🎬 콘텐츠 기반 영화 추천 시스템</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg-elevated: #171a23;
+    --bg-card: #1d212c;
+    --border: #2a2f3d;
+    --text: #eef0f5;
+    --text-muted: #9aa1b2;
+    --accent: #f5c518; /* IMDB-ish gold */
+    --accent-soft: rgba(245, 197, 24, 0.15);
+    --up: #4caf7d;
+    --down: #e2685c;
+    --radius: 14px;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: radial-gradient(circle at top, #171a23 0%, #0b0d12 60%);
+    color: var(--text);
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Segoe UI", system-ui, sans-serif;
+    line-height: 1.5;
+    padding-bottom: 60px;
+  }
+
+  header {
+    padding: 40px 24px 20px;
+    text-align: center;
+  }
+
+  header h1 {
+    font-size: clamp(1.6rem, 3vw, 2.4rem);
+    margin: 0 0 8px;
+  }
+
+  header p {
+    color: var(--text-muted);
+    margin: 0;
+    font-size: 0.95rem;
+  }
+
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 36px;
+  }
+
+  section {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+  }
+
+  section h2 {
+    margin: 0 0 16px;
+    font-size: 1.15rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* ---------- 검색 ---------- */
+  .search-wrap {
+    position: relative;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  #search-input {
+    width: 100%;
+    padding: 14px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    font-size: 1rem;
+    outline: none;
+  }
+
+  #search-input:focus {
+    border-color: var(--accent);
+  }
+
+  #search-results {
+    position: absolute;
+    top: 110%;
+    left: 0;
+    right: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 20;
+    box-shadow: var(--shadow);
+    display: none;
+  }
+
+  #search-results.open { display: block; }
+
+  #search-results button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 16px;
+    background: none;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.92rem;
+  }
+
+  #search-results button:hover { background: var(--accent-soft); }
+
+  /* ---------- 선택된 영화 ---------- */
+  #selected-movie {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 24px;
+  }
+
+  #selected-poster {
+    width: 180px;
+    height: 270px;
+    border-radius: 10px;
+    object-fit: cover;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+  }
+
+  #selected-info h3 {
+    margin: 0 0 6px;
+    font-size: 1.4rem;
+  }
+
+  .meta-row {
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    margin-bottom: 10px;
+  }
+
+  .tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.78rem;
+    margin: 0 6px 6px 0;
+  }
+
+  .tag.muted {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-muted);
+  }
+
+  #selected-overview {
+    font-size: 0.92rem;
+    color: #d3d6e0;
+    margin-top: 8px;
+  }
+
+  .rating-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    margin-right: 8px;
+  }
+
+  /* ---------- 탭 토글 ---------- */
+  .toggle-group {
+    display: inline-flex;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px;
+    margin-bottom: 18px;
+  }
+
+  .toggle-group button {
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    padding: 8px 18px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 0.88rem;
+  }
+
+  .toggle-group button.active {
+    background: var(--accent);
+    color: #1a1a1a;
+    font-weight: 600;
+  }
+
+  /* ---------- 추천 카드 그리드 ---------- */
+  #rec-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 16px;
+  }
+
+  .rec-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+  }
+
+  .rec-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--accent);
+  }
+
+  .rec-card img {
+    width: 100%;
+    height: 210px;
+    object-fit: cover;
+    display: block;
+    background: #262a36;
+  }
+
+  .rec-card .poster-fallback {
+    width: 100%;
+    height: 210px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    background: #262a36;
+    color: var(--text-muted);
+  }
+
+  .rec-body { padding: 10px 12px 14px; }
+
+  .rec-title {
+    font-size: 0.86rem;
+    font-weight: 600;
+    margin: 0 0 6px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .rec-sim {
+    font-size: 0.78rem;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .rec-genres .tag { font-size: 0.68rem; padding: 2px 8px; margin: 0 4px 4px 0; }
+
+  /* ---------- 설명 패널 ---------- */
+  #explain-steps { display: flex; flex-direction: column; gap: 14px; }
+
+  .step {
+    display: flex;
+    gap: 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+
+  .step-num {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+  }
+
+  .step p { margin: 0; font-size: 0.88rem; color: #d3d6e0; }
+  .step strong { color: var(--accent); }
+
+  /* ---------- Before/After 비교 ---------- */
+  table.compare {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.86rem;
+  }
+
+  table.compare th, table.compare td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+  }
+
+  table.compare th { color: var(--text-muted); font-weight: 500; }
+
+  .rank-up { color: var(--up); font-weight: 600; }
+  .rank-down { color: var(--down); font-weight: 600; }
+  .rank-new { color: var(--accent); font-weight: 600; }
+  .rank-out { color: var(--text-muted); }
+
+  footer {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    margin-top: 40px;
+  }
+
+  #load-error {
+    display: none;
+    max-width: 640px;
+    margin: 60px auto;
+    text-align: center;
+    color: var(--down);
+    line-height: 1.7;
+  }
+
+  @media (max-width: 640px) {
+    #selected-movie { grid-template-columns: 1fr; }
+    #selected-poster { width: 140px; height: 210px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎬 콘텐츠 기반 영화 추천 시스템</h1>
+  <p>장르 유사도(코사인 유사도) + 가중 평점(IMDB Weighted Rating)을 활용한 TMDB 영화 추천 데모</p>
+</header>
+
+<div id="load-error">
+  ⚠️ 데이터(data.json)를 불러오지 못했습니다.<br />
+  브라우저에서 <code>file://</code> 로 직접 열면 보안 정책(CORS) 때문에 로딩이 막힐 수 있습니다.<br />
+  로컬에서 확인하려면 <code>app</code> 폴더에서 <code>python -m http.server</code> 실행 후
+  <code>http://localhost:8000/recommender_ui.html</code> 로 접속해보세요.
+</div>
+
+<main id="app" style="display:none;">
+
+  <section>
+    <h2>🔍 영화 검색</h2>
+    <div class="search-wrap">
+      <input id="search-input" type="text" placeholder="영화 제목을 입력하세요 (예: The Dark Knight Rises)" autocomplete="off" />
+      <div id="search-results"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>🎞 선택한 영화</h2>
+    <div id="selected-movie">
+      <img id="selected-poster" src="" alt="poster" />
+      <div id="selected-info">
+        <h3 id="selected-title">-</h3>
+        <div class="meta-row" id="selected-meta"></div>
+        <div id="selected-genres"></div>
+        <p id="selected-overview"></p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>🍿 추천 결과</h2>
+    <div class="toggle-group" id="rec-toggle">
+      <button data-mode="after" class="active">가중 평점 반영 (After)</button>
+      <button data-mode="before">순수 유사도 (Before)</button>
+    </div>
+    <div id="rec-grid"></div>
+  </section>
+
+  <section>
+    <h2>📌 어떻게 추천했나요?</h2>
+    <div id="explain-steps"></div>
+  </section>
+
+  <section>
+    <h2>⚖️ Before / After 비교 (상위 10개)</h2>
+    <p style="color:var(--text-muted); font-size:0.85rem; margin-top:-8px;">
+      왼쪽(Before)은 장르 유사도만 반영한 순위, 오른쪽(After)은 가중 평점까지 반영한 순위입니다.
+    </p>
+    <div style="overflow-x:auto;">
+      <table class="compare">
+        <thead>
+          <tr><th>영화</th><th>Before 순위</th><th>After 순위</th><th>변동</th></tr>
+        </thead>
+        <tbody id="compare-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  데이터: TMDB 5000 Movie Dataset · 이미지: TMDB API · 『파이썬 머신러닝 완벽 가이드』 9장 실습 프로젝트
+</footer>
+
+<script>
+(async function () {
+  const TOP_N_DISPLAY = 10; // 화면에 보여줄 추천 개수
+
+  let DATA = null;
+  let selectedId = null;
+  let currentMode = "after"; // 'after' | 'before'
+
+  // 1) data.json 로딩
+  try {
+    const res = await fetch("data.json");
+    if (!res.ok) throw new Error("fetch failed: " + res.status);
+    DATA = await res.json();
+  } catch (err) {
+    document.getElementById("load-error").style.display = "block";
+    console.error(err);
+    return;
+  }
+
+  document.getElementById("app").style.display = "flex";
+  document.getElementById("app").style.flexDirection = "column";
+
+  const movieById = (id) => DATA.movies[String(id)];
+
+  // 2) 검색 자동완성
+  const searchInput = document.getElementById("search-input");
+  const searchResults = document.getElementById("search-results");
+
+  function renderSearchResults(query) {
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      searchResults.classList.remove("open");
+      searchResults.innerHTML = "";
+      return;
+    }
+    const matches = DATA.search_index
+      .filter((m) => m.title.toLowerCase().includes(q))
+      .slice(0, 8);
+
+    if (matches.length === 0) {
+      searchResults.innerHTML = '<button disabled>검색 결과가 없습니다</button>';
+    } else {
+      searchResults.innerHTML = matches
+        .map((m) => `<button data-id="${m.id}">${m.title}</button>`)
+        .join("");
+    }
+    searchResults.classList.add("open");
+  }
+
+  searchInput.addEventListener("input", (e) => renderSearchResults(e.target.value));
+
+  searchResults.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-id]");
+    if (!btn) return;
+    selectMovie(Number(btn.dataset.id));
+    searchInput.value = movieById(btn.dataset.id).title;
+    searchResults.classList.remove("open");
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".search-wrap")) searchResults.classList.remove("open");
+  });
+
+  // 3) Before/After 토글
+  document.getElementById("rec-toggle").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-mode]");
+    if (!btn) return;
+    currentMode = btn.dataset.mode;
+    document
+      .querySelectorAll("#rec-toggle button")
+      .forEach((b) => b.classList.toggle("active", b === btn));
+    renderRecommendations();
+  });
+
+  // 4) 영화 선택 시 화면 갱신
+  function selectMovie(id) {
+    selectedId = id;
+    renderSelectedMovie();
+    renderRecommendations();
+    renderExplanation();
+    renderComparison();
+  }
+
+  function posterTag(url, alt) {
+    return url
+      ? `<img src="${url}" alt="${alt}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'), {className:'poster-fallback', innerText:'🎬'}))" />`
+      : `<div class="poster-fallback">🎬</div>`;
+  }
+
+  function renderSelectedMovie() {
+    const movie = movieById(selectedId);
+    document.getElementById("selected-poster").outerHTML = movie.poster_url
+      ? `<img id="selected-poster" src="${movie.poster_url}" alt="${movie.title}" />`
+      : `<div id="selected-poster" class="poster-fallback" style="height:270px; border-radius:10px;">🎬</div>`;
+
+    document.getElementById("selected-title").textContent = movie.title;
+    document.getElementById("selected-meta").innerHTML = `
+      <span class="rating-pill">⭐ ${movie.vote_average.toFixed(1)} (원점수)</span>
+      <span class="rating-pill">🧮 ${movie.weighted_vote.toFixed(2)} (가중 평점)</span>
+      <span class="rating-pill">🗳 ${movie.vote_count.toLocaleString()}명 투표</span>
+      ${movie.director ? `<span class="rating-pill">🎬 감독: ${movie.director}</span>` : ""}
+    `;
+    document.getElementById("selected-genres").innerHTML = movie.genres
+      .map((g) => `<span class="tag">${g}</span>`)
+      .join("");
+    document.getElementById("selected-overview").textContent =
+      movie.overview || "(줄거리 정보가 없습니다)";
+  }
+
+  function renderRecommendations() {
+    const movie = movieById(selectedId);
+    const list = movie.recommendations[currentMode].slice(0, TOP_N_DISPLAY);
+    const grid = document.getElementById("rec-grid");
+
+    grid.innerHTML = list
+      .map((rec) => {
+        const recMovie = movieById(rec.id);
+        const commonGenres = recMovie.genres.filter((g) => movie.genres.includes(g));
+        const otherGenres = recMovie.genres.filter((g) => !commonGenres.includes(g));
+        const simPct = Math.round(rec.similarity * 100);
+
+        return `
+          <div class="rec-card" data-id="${rec.id}">
+            ${posterTag(recMovie.poster_url, recMovie.title)}
+            <div class="rec-body">
+              <p class="rec-title">${recMovie.title}</p>
+              <div class="rec-sim">유사도 ${simPct}%${
+                currentMode === "after" ? ` · ⭐ ${rec.weighted_vote.toFixed(1)}` : ""
+              }</div>
+              <div class="rec-genres">
+                ${commonGenres.map((g) => `<span class="tag">${g}</span>`).join("")}
+                ${otherGenres.map((g) => `<span class="tag muted">${g}</span>`).join("")}
+              </div>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
+    grid.querySelectorAll(".rec-card").forEach((card) => {
+      card.addEventListener("click", () => {
+        selectMovie(Number(card.dataset.id));
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    });
+  }
+
+  function renderExplanation() {
+    const movie = movieById(selectedId);
+    const top1 = movie.recommendations.after[0] || movie.recommendations.before[0];
+    const top1Movie = movieById(top1.id);
+    const simPct = Math.round(top1.similarity * 100);
+
+    document.getElementById("explain-steps").innerHTML = `
+      <div class="step">
+        <div class="step-num">1</div>
+        <p>
+          "<strong>${movie.title}</strong>"의 장르는 [${movie.genres.join(", ")}] 이에요.<br />
+          컴퓨터는 이 장르 목록을 <strong>[1, 0, 1, 0, ...]</strong> 같은 숫자 벡터로 바꿔서 이해해요.
+        </p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <p>
+          이 벡터를 다른 영화들의 벡터와 비교했더니, "<strong>${top1Movie.title}</strong>"와
+          <strong>${simPct}%</strong> 비슷하다는 결과가 나왔어요. (코사인 유사도)
+        </p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <p>
+          그런데 장르가 비슷하다고 다 좋은 영화는 아니겠죠? 평점을 준 사람이 적으면 그 평점을 그대로 믿기 어려워서,
+          <strong>가중 평점</strong>(${top1Movie.weighted_vote.toFixed(2)}점)을 함께 고려해 추천 순위를 다시 매겼어요.
+        </p>
+      </div>
+    `;
+  }
+
+  function renderComparison() {
+    const movie = movieById(selectedId);
+    const before = movie.recommendations.before.slice(0, TOP_N_DISPLAY);
+    const after = movie.recommendations.after.slice(0, TOP_N_DISPLAY);
+
+    const beforeRank = new Map(before.map((r, i) => [r.id, i + 1]));
+    const afterRank = new Map(after.map((r, i) => [r.id, i + 1]));
+
+    // Before, After 어느 한쪽에라도 등장한 영화 id 전체 (등장 순서 유지, 중복 제거)
+    const allIds = [...new Set([...before.map((r) => r.id), ...after.map((r) => r.id)])];
+
+    const rows = allIds.map((id) => {
+      const title = movieById(id).title;
+      const b = beforeRank.get(id);
+      const a = afterRank.get(id);
+
+      let statusHtml;
+      if (b && a) {
+        const change = b - a;
+        if (change > 0) statusHtml = `<span class="rank-up">⬆ ${change}단계 상승</span>`;
+        else if (change < 0) statusHtml = `<span class="rank-down">⬇ ${Math.abs(change)}단계 하락</span>`;
+        else statusHtml = `<span>변동 없음</span>`;
+      } else if (a) {
+        statusHtml = `<span class="rank-new">🆕 새로 추천됨</span>`;
+      } else {
+        statusHtml = `<span class="rank-out">❌ 제외됨</span>`;
+      }
+
+      return `<tr><td>${title}</td><td>${b ?? "-"}</td><td>${a ?? "-"}</td><td>${statusHtml}</td></tr>`;
+    });
+
+    document.getElementById("compare-body").innerHTML = rows.join("");
+  }
+
+  // 5) 초기 진입 시 기본 영화 선택 (데이터에 있으면 The Dark Knight Rises, 없으면 첫 번째 영화)
+  const defaultMovie =
+    DATA.search_index.find((m) => m.title === "The Dark Knight Rises") || DATA.search_index[0];
+  searchInput.value = defaultMovie.title;
+  selectMovie(defaultMovie.id);
+})();
+</script>
+
+</body>
+</html>
