@@ -586,7 +586,10 @@
       ? `<img id="selected-poster" src="${movie.poster_url}" alt="${movie.title}" />`
       : `<div id="selected-poster" class="poster-fallback" style="height:270px; border-radius:10px;">🎬</div>`;
 
-    document.getElementById("selected-title").textContent = displayTitle(movie);
+    const selectedYear = movie.release_date ? movie.release_date.slice(0, 4) : null;
+    document.getElementById("selected-title").innerHTML = `${displayTitle(movie)}${
+      selectedYear ? ` <span class="rec-year">(${selectedYear})</span>` : ""
+    }`;
 
     // 한국어 제목이 원제와 다를 때만, 확인할 수 있도록 영어 원제를 함께 보여줍니다.
     const existingSub = document.getElementById("selected-original-title");
