@@ -293,6 +293,12 @@
     overflow: hidden;
   }
 
+  .rec-year {
+    color: var(--text-muted);
+    font-weight: 400;
+    font-size: 0.9em;
+  }
+
   .rec-title-original {
     font-size: 0.7rem;
     color: var(--text-muted);
@@ -594,6 +600,7 @@
     }
 
     document.getElementById("selected-meta").innerHTML = `
+      ${movie.release_date ? `<span class="rating-pill">📅 ${movie.release_date} 개봉</span>` : ""}
       <span class="rating-pill">⭐ ${movie.vote_average.toFixed(1)} (원점수)</span>
       <span class="rating-pill">🧮 ${movie.weighted_vote.toFixed(2)} (가중 평점)</span>
       <span class="rating-pill">🗳 ${movie.vote_count.toLocaleString()}명 투표</span>
@@ -622,12 +629,13 @@
         // 공통 장르 판단은 언어에 상관없는 영어 장르명 배열로 하고, 화면 라벨은 한글로 보여줍니다.
         const isCommon = recMovie.genres.map((g) => movie.genres.includes(g));
         const simPct = Math.round(rec.similarity * 100);
+        const year = recMovie.release_date ? recMovie.release_date.slice(0, 4) : null;
 
         return `
           <div class="rec-card" data-id="${rec.id}">
             ${posterTag(recMovie.poster_url, displayTitle(recMovie))}
             <div class="rec-body">
-              <p class="rec-title">${displayTitle(recMovie)}</p>
+              <p class="rec-title">${displayTitle(recMovie)}${year ? ` <span class="rec-year">(${year})</span>` : ""}</p>
               ${hasKoTitle(recMovie) ? `<p class="rec-title-original">${recMovie.title}</p>` : ""}
               <div class="rec-sim">유사도 ${simPct}%${
                 currentMode === "after" ? ` · ⭐ ${rec.weighted_vote.toFixed(1)}` : ""
